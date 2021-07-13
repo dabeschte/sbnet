@@ -1,0 +1,5 @@
+sbnet_tensorflow/build/**
+**.egg-info
+*.egg
+build/**
+**/.vscode/**

@@ -22,6 +22,7 @@
 
 #include <stdio.h>
 #include "assert.h"
+#include <cuda_runtime.h>
 
 #define DIVUP(a, b) ( ((a)+(b)-1)/(b) )
 
