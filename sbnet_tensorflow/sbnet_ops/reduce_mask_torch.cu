@@ -244,18 +244,18 @@ void reduce_mask_cuda_wrapper(
         dim3 block(std::min(DIVUP(bSzH*bSzW, 32)*32, 1024), 1, 1);
         dim3 grid(bCntW, bCntH, N);
 
-        printf("N=%i, H=%i, W=%i, threshold=%f, numBins=%i, binSize=%i, bOffsH0=%i, bOffsW0=%i, bSzh=%i, bSzW=%i, bStrH=%i, bStrW=%i, bCntH=%i, bCntW=%i avgPool=%i\n",
-            N, H, W, // C is assumed to be 1
-            threshold, // value to consider non-sparse block
-            numBins,   // number of bins to partition activeBlockIndices to reduce atomics pressure
-            binSize,
-            bOffsH0,
-            bOffsW0,      // generally negative - first block element offset for correct padding
-            bSzH, bSzW,   // block sizes
-            bStrH, bStrW, // block strides
-            bCntH, bCntW, // block counts
-            avgPool?1:0
-        );
+        // printf("N=%i, H=%i, W=%i, threshold=%f, numBins=%i, binSize=%i, bOffsH0=%i, bOffsW0=%i, bSzh=%i, bSzW=%i, bStrH=%i, bStrW=%i, bCntH=%i, bCntW=%i avgPool=%i\n",
+        //     N, H, W, // C is assumed to be 1
+        //     threshold, // value to consider non-sparse block
+        //     numBins,   // number of bins to partition activeBlockIndices to reduce atomics pressure
+        //     binSize,
+        //     bOffsH0,
+        //     bOffsW0,      // generally negative - first block element offset for correct padding
+        //     bSzH, bSzW,   // block sizes
+        //     bStrH, bStrW, // block strides
+        //     bCntH, bCntW, // block counts
+        //     avgPool?1:0
+        // );
 
         reduceMask<<<grid, block, 0, stream>>>(
             mask, 

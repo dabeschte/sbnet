@@ -57,9 +57,9 @@ std::vector<torch::Tensor> reduce_mask_wrapper(
     int bStrW = bstride_dynamic[1];
     int bOffsH0 = boffset_dynamic[0];
     int bOffsW0 = boffset_dynamic[1];
-    printf("cnt=%d, %d, sz=%d, %d, str=%d, %d, offs=%d, %d  N=%d, H=%d, W=%d\n",
-          bCntH, bCntW, bSzH, bSzW, bStrH, bStrW, bOffsH0, bOffsW0, N, H, W);
-    fflush(stdout);
+    // printf("cnt=%d, %d, sz=%d, %d, str=%d, %d, offs=%d, %d  N=%d, H=%d, W=%d\n",
+    //       bCntH, bCntW, bSzH, bSzW, bStrH, bStrW, bOffsH0, bOffsW0, N, H, W);
+    // fflush(stdout);
 
     // Initializes output.
     // TODO: try to find a way not to redo the allocation in Compute
@@ -101,6 +101,7 @@ std::vector<torch::Tensor> reduce_mask_wrapper(
         // cudaMemset(activeBlockIndices.data_ptr<int16_t>(), 0, sizeof(int16_t)*3*maxIndices);
         readBack_ = 1;
     }
+    cudaMemcpy(binCounts.data_ptr<int32_t>(), &readBack_, sizeof(int32_t), cudaMemcpyHostToDevice);
 
     return {activeBlockIndices, binCounts};
 }
