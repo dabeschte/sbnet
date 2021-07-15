@@ -36,14 +36,14 @@ void sparse_gather_cuda_wrapper(
     int bOffsH0, int bOffsW0, int bSzH, int bSzW, int bStrH, int bStrW,
     int numActive, const short* activeBlockIndices, bool transpose) 
 {
-    cudaStream_t stream = 0;
+    // cudaStream_t stream = 0;
     LaunchParams lp(C, bSzH, bSzW, numActive);
     bool hasInst = false;
 #if 1
     #define CALL(RR, CC1, trans) \
         if (bSzH == RR && bSzW == RR && lp.fittingC1 == CC1) { \
             hasInst = true; \
-            blockGatherTiled0<512, RR, COMPUTE_R1(RR), RR, CC1, trans><<<lp.grid, lp.block, lp.shmemSize, stream>>>( \
+            blockGatherTiled0<512, RR, COMPUTE_R1(RR), RR, CC1, trans><<<lp.grid, lp.block, lp.shmemSize>>>( \
                 x, (const short*)activeBlockIndices, \
                 y, N, H, W, C, bOffsH0, bOffsW0, bStrH, bStrW); \
         } else
@@ -111,7 +111,8 @@ void sparse_gather_cuda_wrapper(
     if (!hasInst)
     {
         //printf("gather, C, bSzH, bSzW=%d, %d, %d, fittingC1=%d\n", C, bSzH, bSzW, lp.fittingC1);
-        blockGatherTiled1<512><<<lp.grid, lp.block, lp.shmemSize, stream>>>(
+        // blockGatherTiled1<512><<<lp.grid, lp.block, lp.shmemSize, stream>>>(
+        blockGatherTiled1<512><<<lp.grid, lp.block, lp.shmemSize>>>(
             x, (const short*)activeBlockIndices,
             y, N, H, W, C, bOffsH0, bOffsW0, bStrH, bStrW,
             bSzH, lp.bSzH1, bSzW, lp.fittingC1, transpose);
@@ -130,7 +131,7 @@ void sparse_scatter_cuda_wrapper(
     int numActive, const short* activeBlockIndices, bool add, bool transpose, bool atomic
 )
 {
-    cudaStream_t stream = 0;
+    // cudaStream_t stream = 0;
     LaunchParams lp(C, bSzH, bSzW, numActive);
     bool hasInst = false;
 #if 1
@@ -138,7 +139,7 @@ void sparse_scatter_cuda_wrapper(
         if (bSzH == RR && bSzW == RR && lp.fittingC1 == CC1 && atomic == false) { \
             hasInst = true; \
             blockScatterTiled0<512, RR, COMPUTE_R1(RR), RR, CC1, addt, transt, false> \
-                <<<lp.grid, lp.block, lp.shmemSize, stream>>>( \
+                <<<lp.grid, lp.block, lp.shmemSize>>>( \
                     x, (const short*)activeBlockIndices, \
                     y, N, H, W, C, bOffsH0, bOffsW0, bStrH, bStrW); \
         } else
@@ -221,7 +222,8 @@ void sparse_scatter_cuda_wrapper(
 #endif
     if (!hasInst) {
         //printf("scatter, C, bSzH, bSzW=%d, %d, %d, fittingC1=%d\n", C, bSzH, bSzW, lp.fittingC1);
-        blockScatterTiled1<512><<<lp.grid, lp.block, lp.shmemSize, stream>>>(
+        // blockScatterTiled1<512><<<lp.grid, lp.block, lp.shmemSize, stream>>>(
+        blockScatterTiled1<512><<<lp.grid, lp.block, lp.shmemSize>>>(
             x, (const short*)activeBlockIndices,
             y, N, H, W, C, bOffsH0, bOffsW0, bStrH, bStrW,
             bSzH, lp.bSzH1, bSzW, lp.fittingC1, add, transpose, atomic);
@@ -232,10 +234,11 @@ void sparse_scatter_cuda_wrapper(
 }
 
 void copy_tensor_cuda_wrapper(float* dst, const float* src, int count) {
-    cudaStream_t stream = 0;
-    cudaMemcpyAsync(dst, src, sizeof(float)*count, cudaMemcpyDeviceToDevice, stream);
-    gpuErrorCheck( cudaPeekAtLastError() );
-    cudaStreamSynchronize(stream);
-    gpuErrorCheck( cudaPeekAtLastError() );
+    // cudaStream_t stream = 0;
+    // cudaMemcpyAsync(dst, src, sizeof(float)*count, cudaMemcpyDeviceToDevice, stream);
+    // gpuErrorCheck( cudaPeekAtLastError() );
+    // cudaStreamSynchronize(stream);
+    // gpuErrorCheck( cudaPeekAtLastError() );
+    cudaMemcpy(dst, src, sizeof(float)*count, cudaMemcpyDeviceToDevice);
 }
 

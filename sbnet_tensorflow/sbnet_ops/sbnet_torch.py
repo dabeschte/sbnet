@@ -198,7 +198,23 @@ class SBNetConvOperator(nn.Module):
         if not self.use_native_conv:
             self.padding = (0,0)
 
+
+    def _allocate_out(self, x):
+        padding = self.padding
+        dilation = self.dilation
+        stride = self.stride
+        filter = self.weight
+        c_out = self.out_channels
+
+        out_b = x.shape[0]
+        out_h = int((x.shape[2] + 2 * padding[0] - dilation[0] * (filter.shape[2]-1) - 1) // stride[0] + 1)
+        out_w = int((x.shape[3] + 2 * padding[1] - dilation[1] * (filter.shape[3]-1) - 1) // stride[1] + 1)
+        out_c = filter.shape[3] if c_out is None else c_out
+
+        return torch.empty((out_b, out_c, out_h, out_w), dtype=x.dtype, device=x.device, memory_format=torch.channels_last)
+
     def forward(self, input):
+        fake = False
         mask = None
         if type(input) == tuple:
             input, mask = input
@@ -213,7 +229,8 @@ class SBNetConvOperator(nn.Module):
         bias = None if self.add_to_prev_out and self.prev_out is not None else self.bias
         
         if self.use_native_conv:
-            out = torch.conv2d(input, self.weight, bias, self.stride, self.padding, self.dilation, self.groups)
+            # out = torch.conv2d(input, self.weight, bias, self.stride, self.padding, self.dilation, self.groups)
+            out = self._allocate_out(input)
             if self.add_to_prev_out:
                 if self.prev_out is None:
                     self.prev_out = out.detach().clone()
@@ -225,32 +242,42 @@ class SBNetConvOperator(nn.Module):
         if mask is None:
             mask = torch.max(input, dim=1, keepdim=True)[0]
 
-        active_block_indices, bin_counts = reduce_mask(mask, self.blockCount, tol=0.5, **self.inBlockParams)
-        blockStack = sparse_gather(
-            input, bin_counts, active_block_indices, transpose=self.transpose, **self.inBlockParams)
+        if fake:
+            active_block_indices, bin_counts = torch.zeros((1,3), device=input.device, dtype=torch.int16), torch.ones((1), device=input.device, dtype=torch.int16)
+            blockStack = torch.empty((input.shape[0]*bin_counts, input.shape[1], self.blockSize[0], self.blockSize[1]), device=input.device, memory_format=torch.channels_last)
+        else:
+            active_block_indices, bin_counts = reduce_mask(mask, self.blockCount, tol=0.5, **self.inBlockParams)
+            blockStack = sparse_gather(
+                input, bin_counts, active_block_indices, transpose=self.transpose, **self.inBlockParams)
+
 
         # print(blockStack.is_contiguous(memory_format=torch.channels_last))
 
-        convBlocks = torch.conv2d(blockStack, self.weight, bias, self.stride, self.padding, self.dilation, self.groups)
+        if fake:
+            convBlocks = torch.empty_like(blockStack[:, :, 1:-1, 1:-1])
+        else:
+            convBlocks = torch.conv2d(blockStack, self.weight, bias, self.stride, self.padding, self.dilation, self.groups)
 
-        hout = (h - self.kernel_size[0]+1) // self.stride[0] + 2 * self.padding_original[0] 
-        wout = (h - self.kernel_size[0]+1) // self.stride[0] + 2 * self.padding_original[0] 
-        
         out_y = None
         if self.add_to_prev_out:
             out_y = self.prev_out
         
         if out_y is None:
+            hout = (h - self.kernel_size[0]+1) // self.stride[0] + 2 * self.padding_original[0]
+            wout = (h - self.kernel_size[0]+1) // self.stride[0] + 2 * self.padding_original[0]
             out_y = torch.zeros((input.shape[0], self.out_channels, hout, wout), 
                 dtype=input.dtype, device=input.device
             ).contiguous(memory_format=torch.channels_last)
 
-        y = sparse_scatter(
-            convBlocks, bin_counts, active_block_indices,
-            out_y, transpose=self.transpose, add=self.add_to_prev_out, atomic=True, **self.outBlockParams)
+        if fake:
+            y = out_y
+        else:
+            y = sparse_scatter(
+                convBlocks, bin_counts, active_block_indices,
+                out_y, transpose=self.transpose, add=self.add_to_prev_out, atomic=False, **self.outBlockParams)
 
         if self.add_to_prev_out and self.prev_out is None:
-            self.prev_out = out_y.detach().clone()
+            self.prev_out = y.detach().clone()
 
         # if self.add_to_prev_out:
         #     if self.prev_out is None:
