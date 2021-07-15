@@ -141,6 +141,10 @@ class SBNetConv(nn.Conv2d):
 
 
 class SBNetConvOperator(nn.Module):
+    updated_tiles = 0
+    nr_tiles = 0
+    count_tiles = False
+
     def __init__(
             self,
             weight,
@@ -154,7 +158,7 @@ class SBNetConvOperator(nn.Module):
             groups: int = 1,
             padding_mode: str = 'zeros', 
             threshold=0.0,
-            tol = 0.0,
+            tol = 0.5,
             blockSize=(16,16),
             blockStride=None,
             blockOffset=None,
@@ -229,8 +233,10 @@ class SBNetConvOperator(nn.Module):
         bias = None if self.add_to_prev_out and self.prev_out is not None else self.bias
         
         if self.use_native_conv:
-            # out = torch.conv2d(input, self.weight, bias, self.stride, self.padding, self.dilation, self.groups)
-            out = self._allocate_out(input)
+            if fake:
+                out = self._allocate_out(input)
+            else:
+                out = torch.conv2d(input, self.weight, bias, self.stride, self.padding, self.dilation, self.groups)
             if self.add_to_prev_out:
                 if self.prev_out is None:
                     self.prev_out = out.detach().clone()
@@ -240,18 +246,20 @@ class SBNetConvOperator(nn.Module):
             return out
 
         if mask is None:
-            mask = torch.max(input, dim=1, keepdim=True)[0]
+            mask = (torch.max(input, dim=1, keepdim=True)[0] > self.threshold).float()
 
         if fake:
             active_block_indices, bin_counts = torch.zeros((1,3), device=input.device, dtype=torch.int16), torch.ones((1), device=input.device, dtype=torch.int16)
             blockStack = torch.empty((input.shape[0]*bin_counts, input.shape[1], self.blockSize[0], self.blockSize[1]), device=input.device, memory_format=torch.channels_last)
         else:
-            active_block_indices, bin_counts = reduce_mask(mask, self.blockCount, tol=0.5, **self.inBlockParams)
+            active_block_indices, bin_counts = reduce_mask(mask, self.blockCount, tol=self.tol, **self.inBlockParams)
             blockStack = sparse_gather(
                 input, bin_counts, active_block_indices, transpose=self.transpose, **self.inBlockParams)
 
 
-        # print(blockStack.is_contiguous(memory_format=torch.channels_last))
+        if SBNetConvOperator.count_tiles:
+            SBNetConvOperator.updated_tiles += bin_counts[0].item()
+            SBNetConvOperator.nr_tiles += self.blockCount[0] * self.blockCount[1]
 
         if fake:
             convBlocks = torch.empty_like(blockStack[:, :, 1:-1, 1:-1])
@@ -265,16 +273,24 @@ class SBNetConvOperator(nn.Module):
         if out_y is None:
             hout = (h - self.kernel_size[0]+1) // self.stride[0] + 2 * self.padding_original[0]
             wout = (h - self.kernel_size[0]+1) // self.stride[0] + 2 * self.padding_original[0]
-            out_y = torch.zeros((input.shape[0], self.out_channels, hout, wout), 
-                dtype=input.dtype, device=input.device
-            ).contiguous(memory_format=torch.channels_last)
+            if self.add_to_prev_out:
+                out_y = torch.zeros((input.shape[0], self.out_channels, hout, wout),
+                    dtype=input.dtype, device=input.device
+                ).contiguous(memory_format=torch.channels_last)
+            else:
+                out_y = torch.empty((input.shape[0], self.out_channels, hout, wout),
+                    dtype=input.dtype, device=input.device
+                ).contiguous(memory_format=torch.channels_last)
 
+        out_y_clone = out_y.clone()
         if fake:
             y = out_y
         else:
             y = sparse_scatter(
                 convBlocks, bin_counts, active_block_indices,
                 out_y, transpose=self.transpose, add=self.add_to_prev_out, atomic=False, **self.outBlockParams)
+
+        out_y_diff = (out_y_clone - out_y).cpu().numpy()
 
         if self.add_to_prev_out and self.prev_out is None:
             self.prev_out = y.detach().clone()
