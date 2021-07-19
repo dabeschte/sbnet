@@ -93,17 +93,21 @@ std::vector<torch::Tensor> reduce_mask_wrapper(
         avg_bool
     );
 
-    int readBack_ = 0;
+    auto binCountsCPU = binCounts.cpu();
 
-    cudaMemcpy(&readBack_, binCounts.data_ptr<int32_t>(), sizeof(int32_t), cudaMemcpyDeviceToHost);
-    if (readBack_ == 0) {
-        cudaMemset(activeBlockIndices.data_ptr<int16_t>(), 0, sizeof(int16_t)*3);
-        // cudaMemset(activeBlockIndices.data_ptr<int16_t>(), 0, sizeof(int16_t)*3*maxIndices);
-        readBack_ = 1;
-    }
-    cudaMemcpy(binCounts.data_ptr<int32_t>(), &readBack_, sizeof(int32_t), cudaMemcpyHostToDevice);
 
-    return {activeBlockIndices, binCounts};
+    // I think this is not really needed
+    // int readBack_ = 0;
+
+    // cudaMemcpy(&readBack_, binCounts.data_ptr<int32_t>(), sizeof(int32_t), cudaMemcpyDeviceToHost);
+    // if (readBack_ == 0) {
+    //     cudaMemset(activeBlockIndices.data_ptr<int16_t>(), 0, sizeof(int16_t)*3);
+    //     // cudaMemset(activeBlockIndices.data_ptr<int16_t>(), 0, sizeof(int16_t)*3*maxIndices);
+    //     readBack_ = 1;
+    // }
+    // cudaMemcpy(binCounts.data_ptr<int32_t>(), &readBack_, sizeof(int32_t), cudaMemcpyHostToDevice);
+
+    return {activeBlockIndices, binCounts, binCountsCPU};
 }
 
 using std::cout;
@@ -111,7 +115,8 @@ using std::endl;
 
 torch::Tensor sparse_gather_wrapper(
     torch::Tensor x, 
-    torch::Tensor binCounts, 
+    torch::Tensor binCounts,
+    int bin0Count,
     torch::Tensor activeBlockIndices, 
     std::vector<int32_t> bsize_dynamic, 
     std::vector<int32_t> bstride_dynamic, 
@@ -131,7 +136,6 @@ torch::Tensor sparse_gather_wrapper(
     int W = x.size(3);
     int C = x.size(1);
 
-    int32_t bin0Count = binCounts[0].item<int32_t>();
     int yShapeArr[] = { bin0Count, C, bSzH, bSzW };
     if (transpose)
     {
@@ -186,6 +190,7 @@ torch::Tensor sparse_gather_wrapper(
 torch::Tensor sparse_scatter_wrapper(
     torch::Tensor x,
     torch::Tensor binCounts,
+    int bin0Count,
     torch::Tensor activeBlockIndices,
     torch::Tensor ybase,
     std::vector<int32_t> bsize_dynamic,
@@ -215,7 +220,6 @@ torch::Tensor sparse_scatter_wrapper(
     bool use_var = true;
 
     // read the number of active blocks from bin_counts input that is expected to be always in host mem
-    int32_t bin0Count = binCounts[0].item<int32_t>();
 
     // TODO: verify sizes of x match { bin0Count, bSzH_, bSzW_, C };
     // TODO: try to find a way not to redo the allocation in Compute
